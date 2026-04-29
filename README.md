@@ -2,3 +2,6 @@
 Advanced Encryption Standard (AES-256) in Galois/Counter Mode (GCM) 
 
 File Encryption/Decryption Tool
+
+# Requirements
+- cryptography
