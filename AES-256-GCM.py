@@ -1,65 +1,107 @@
-import os
 from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 from cryptography.exceptions import InvalidTag
+import os
 
-# This function will encrypt the given plaintext using AES-GCM.
+FILE_SIZE = 2 * 1024 * 1024 * 1024 # The max file size of a file that can be encrypted / decrypted is set to 2GB to prevent memory issues. (You can adjust this value as needed)
+
 def encrypt(file_path):
+
+    if os.path.getsize(file_path) > FILE_SIZE:
+        print(f"File is too large to encrypt: {file_path}. \n")
+        return
+
+    temp_file_path = file_path + ".tmp" # Create a temporary file path for encryption.
+
     try:
-        with open(file_path, "rb") as file: # Read the file input.
+        with open(file_path, "rb") as file:
             Data = file.read()
 
-        Nonce = os.urandom(12) # Generate a random nonce.
+        # Generate a random nonce.
+        Nonce = os.urandom(12)
+
+        # Encrypt the data using AES-GCM. The nonce is included in the output to allow for decryption later.
         EncryptedData = aesgcm.encrypt(Nonce, Data, None)
+
+        # Write to the temporary file first to ensure that the original file is not corrupted in case of an error during encryption.
+        with open(temp_file_path, "wb") as file:
+            file.write(Nonce + EncryptedData)
         
-        # Overwrite the original file.
-        with open(file_path, "wb") as file:
-            file.write(Nonce + EncryptedData) # Write the nonce and the encrypted data to the file.
+        os.replace(temp_file_path, file_path) # Replace the original file with the temporary file after successful encryption.
+
         print(f"File encrypted: {file_path}. \n")
-    
+
+    # Remove the temporary file if an error occurs during encryption.
     except Exception as e:
+        if os.path.exists(temp_file_path):
+            os.remove(temp_file_path)
         print(f"Error encrypting {file_path}: {e}. \n")
 
-# This function will decrypt the given ciphertext using AES-GCM.
 def decrypt(file_path):
+
+    if os.path.getsize(file_path) > FILE_SIZE:
+        print(f"File is too large to decrypt: {file_path}. \n")
+        return
+
+    temp_file_path = file_path + ".tmp" # Create a temporary file path for decryption.
+
     try:
-        with open(file_path, "rb") as file: # Read the file input.
+        with open(file_path, "rb") as file:
             Data = file.read()
 
         Nonce = Data[:12] # Extract the nonce from the data.
-        EncryptedData = Data[12:] # Extract the encrypted data from the rest of the data.
-        DecryptedData = aesgcm.decrypt(Nonce, EncryptedData, None) # Decrypt the data using AES-GCM.
         
-        with open(file_path, "wb") as file:
-            file.write(DecryptedData) # Write the decrypted data back to the file.
+        EncryptedData = Data[12:] # Extract the encrypted data from the rest of the data.
+
+        DecryptedData = aesgcm.decrypt(Nonce, EncryptedData, None) # Decrypt the data using AES-GCM.
+
+        # Write decrypted data to temp file first to ensure that the original file is not corrupted in case of an error during decryption.
+        with open(temp_file_path, "wb") as file:
+            file.write(DecryptedData)
+
+        os.replace(temp_file_path, file_path) # Replace the original file with the temporary file after successful decryption.
+        
         print(f"File decrypted: {file_path}. \n")
     
     except InvalidTag:
-        print(f"Decryption failed for {file_path}. \n")
-    
-    except Exception as e:
-        print(f"Error decrypting {file_path}: {e}. \n")
+        if os.path.exists(temp_file_path):
+            os.remove(temp_file_path)
+        print(f"Error decrypting {file_path}: Invalid authentication tag. \n")  
 
-# This function encrypts all files in the specified folder and its subfolders.
+    # Remove the temporary file if an error occurs during decryption.
+    except Exception as e:
+        if os.path.exists(temp_file_path):
+            os.remove(temp_file_path)
+        print(f"Error decrypting {file_path}: {e}. \n")  
+
 def encrypt_folder(folder_path):
 
     # Walk through all files in the folder and its subfolders.
     for root_dir, _, files in os.walk(folder_path):
         for file in files:
 
-            if file == "AES-256-GCM.key": # Skip the key to prevent it from being encrypted.
+            if file.endswith(".key"): # Skip the key file to prevent it from being encrypted.
+                print(f"Skipping the key file: {file}. \n")
+                continue
+
+            if file == "AES-256-GCM.py": # Skip the script itself to prevent it from being encrypted.
+                print(f"Skipping the script file: {file}. \n")
                 continue
 
             file_path = os.path.join(root_dir, file)
             encrypt(file_path) # Encrypt each file using the encrypt function.
 
-# This function decrypts all files in the specified folder and its subfolders.
 def decrypt_folder(folder_path):
 
     # Walk through all files in the folder and its subfolders.
     for root_dir, _, files in os.walk(folder_path):
         for file in files:
 
-            if file == "AES-256-GCM.key": # Skip the key.
+            if file.endswith(".key"): # Skip the key file to prevent it from being decrypted.
+                print(f"Skipping the key file: {file}. \n")
+                continue
+
+            if file == "AES-256-GCM.py": # Skip the script itself to prevent it from being decrypted.
+                print(f"Skipping the script file: {file}. \n")
                 continue
 
             file_path = os.path.join(root_dir, file)
@@ -94,7 +136,7 @@ if __name__ == "__main__":
         aesgcm = AESGCM(Key) # Create an AES-GCM cipher instance.
 
         encrypt_folder(Folder) # Encrypt all files in the specified folder.
-        print("All files in the folder have been encrypted successfully. \n")
+        print("Encryption completed successfully. \n")
 
     # Perform decryption if the user selects 'd'.
     elif Mode == "d":
@@ -111,7 +153,7 @@ if __name__ == "__main__":
         aesgcm = AESGCM(Key) # Create an AES-GCM cipher instance.
 
         decrypt_folder(Folder) # Decrypt all files in the specified folder.
-        print("All files in the folder have been decrypted successfully. \n")
+        print("Decryption completed successfully. \n")
 
     # Handle invalid mode selection.
     else:
